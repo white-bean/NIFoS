@@ -1,0 +1,488 @@
+---
+title: "rFIA"
+output: word_document
+---
+```{r warning = FALSE, message = FALSE}
+library(rFIA)
+```
+
+
+## Download & Load Data
+```{r warning = FALSE, message = FALSE}
+#ct <- getFIA(states = 'CT', dir = 'C:/Users/user/Desktop/rFIA/data')
+#db <- readFIA('C:/Users/user/Desktop/rFIA/data')
+
+# Data load
+data('fiaRI') ## subset of the FIA Database for Rhode Island
+data('countiesRI') ## county boundaries of Rhode Island
+```
+
+- states로 원하는 주만 선택가능
+- dir : 해당 위치에 data 저장
+
+## clipFIA
+- 특정연도, 특정 주 일부에서 estimates 산출
+```{r warning = FALSE, message = FALSE}
+riMR = clipFIA(fiaRI, mostRecent = TRUE)
+riBT_MR = clipFIA(fiaRI, mask = countiesRI[1,], mostRecent = TRUE) # BRISTOL
+```
+
+- option
+  - mostRecent(default TRUE) : reporting years가 가장 최신인 것만
+  - mask : define the boundaries of spatial intersection
+  
+- output : FIADB tables (자세한 내용은 FIADB User Guide.pdf 참고)
+  - COND
+  - COND_DWM_CALC
+  - INVASIVE_SUBPLOT_SPP
+  - P2VEG_SUBP_STRUCTURE
+  - PLOT
+  - POP_ESTN_UNIT
+  - POP_EVAL
+  - POP_EVAL_GRP
+  - POP_EVAL_TYP
+  - POP_PLOT_STRATUM_ASSGN
+  - POP_STRATUM
+  - SEEDLING
+  - SUBP_COND
+  - SUBP_COND_CHNG_MTRX
+  - SUBPLOT
+  - SURVEY
+  - TREE
+  - TREE_GRM_BEGIN
+  - TREE_GRM_COMPONENT
+  - TREE_GRM_MIDPT
+
+## tpa
+- Estimate trees per acre & basal area per acre
+```{r warning = FALSE, message = FALSE}
+tpaRI <- tpa(riMR)
+head(tpaRI)
+```
+
+- output
+  - YEAR : reporting year
+  - TPA : mean trees per acre
+  - BAA : mean basal area per acre (sq.ft.)
+  - TPA_PERC : mean proportion of trees falling within the domain of interest, with respect to trees per acre
+  - BAA_PERC : mean proportion of trees falling within the domain of interest, with respect to basal area per acre
+  - nPlots_TREE : number of non-zero plots used to compute tree and basal area estimates
+  - nPlots_AREA : number of non-zero plots used to compute land area estimates
+
+### tpa - group estimates by species
+```{r warning = FALSE, message = FALSE}
+tpaRI_species = tpa(riMR, bySpecies = T)
+head(tpaRI_species)
+```
+
+- SPCD, COMMON_NAME, SCIENTIFIC_NAME : TREE table에 존재하는 변수들
+
+### tpa - group estimates by size class
+```{r warning = FALSE, message = FALSE}
+tpaRI_sizeClass = tpa(riMR, bySizeClass = T)
+head(tpaRI_sizeClass)
+```
+
+- size class : 2-inch intervals
+
+### tpa - Group by species and size class, and plot the distribution
+```{r warning = FALSE, message = FALSE}
+tpaRI_spsc <- tpa(riMR, bySpecies = TRUE, bySizeClass = TRUE)
+plotFIA(tpaRI_spsc, BAA, grp = COMMON_NAME, x = sizeClass,
+        plot.title = 'Size-class distributions of BAA by species', 
+        x.lab = 'Size Class (inches)', text.size = .75,
+        n.max = 5) # Only the top 5 species
+```
+
+### tpa - 특정 조건의 나무, 특정 지역 등으로 산출하고싶을 때
+```{r warning = FALSE, message = FALSE}
+tpaRI_own <- tpa(riMR, 
+                 grpBy = OWNGRPCD, # groupby owner classes
+                 treeDomain = DIA > 12 & CCLCD %in% c(1,2), 
+                 areaDomain = PHYSCLCD %in% c(20:29)) 
+head(tpaRI_own)
+```
+
+### tpa - 특정 population boundaries에 대해서만
+```{r warning = FALSE, message = FALSE}
+tpaRI_counties <- tpa(riMR, polys = countiesRI, returnSpatial = TRUE)
+head(tpaRI_counties)
+```
+
+- polys : specifies the polygons(zones)
+- returnSpatial = T : return sf multipolygon object
+
+```{r warning = FALSE, message = FALSE}
+plotFIA(tpaRI_counties, BAA)
+```
+
+
+## area
+- Estimates of total area (acreage)
+```{r warning = FALSE, message = FALSE}
+area(riMR)
+area(riMR, byLandType=T) # grouped by land class
+area(riMR, landType='forest', treeDomain = DIA > 20) # DBH 20 이상
+```
+
+- option
+  - byLandType = T :  return estimates grouped by land type classes (timberland, non-timberland forest, non-forest, water)
+  - landType : forest / non-forest / census water / non-census water / water / all
+
+- output
+  - YEAR : reporting year
+  - AREA : estimate of total area within domain of interest(acres)
+  - nPlots : number of non-zero plots used to compute area estimates
+
+## areaChange
+- Estimate land area change
+```{r warning = FALSE, message = FALSE}
+areaChange(riMR)
+areaChange(riMR, byLandType=T) # grouped by land class
+areaChange(riMR, landType='forest', treeDomain = DIA > 20) # DBH 20 이상
+```
+
+- PERC_CHNG : 연간 백분율 변화 추정치(%)
+- AREA_CHNG : 연간 변화 추정치(acre)
+- PREV_AREA : 총 토지 면적 추정치(acre)
+
+
+## biomass
+- Estimate tree biomass and carbon stocks
+```{r warning = FALSE, message = FALSE}
+biomass(riMR, landType='timber', treeType='gs')
+biomass(riMR, landType='timber', treeType='gs', component = c('AG', 'FOLIAGE'))
+biomass(riMR, landType='timber', treeType='gs', component = c('AG', 'FOLIAGE', byPlot = T))
+
+riMR$COND$STAND_AGE = makeClasses(riMR$COND$STDAGE, interval=10)
+head(biomass(riMR, grpBy = STAND_AGE), n=8) # groupby stand age
+```
+
+- output
+  - BIO_ACRE : estimate of mean tree biomass per acre(short tons/acre)
+  - CARB_ACRE : estimate of mean tree carbon per acre(short tons/acre)
+
+- option
+  - landType : forest / timber
+  - treeType : all / live / dead / gs(growing-stock)
+  - byPlot = T : returns estimates for individual plot locations instead of population estimates.
+  - component
+    - TOTAL : sum of all components
+    - AG : sum of aboveground components, excluding foliage
+    - FOLIAGE : sapling foliage + stems larger than 5 in dbh
+    - TOP
+    - BOLE
+    - STUMP
+    - SAPLING : 묘목
+    - WDLD_SPP : woodland species
+
+```{r warning = FALSE, message = FALSE}
+ctSF = biomass(riMR, polys = countiesRI, returnSpatial=T)
+plot(ctSF)
+plotFIA(ctSF, BIO_ACRE) # plot of aboveground biomass per acre
+```
+
+- 노랑 > 주황 > 핑크 > 보라 > 파랑
+
+## carbon
+- Estimate carbon stocks(metric tonnes) by IPCC forest carbon pools
+```{r warning = FALSE, message = FALSE}
+carbon(riMR)
+head(carbon(riMR, byPlot=T), n=10)
+carbon(riMR, byComponent=T)
+head(carbon(riMR, grpBy = STAND_AGE), n=10)
+```
+
+- output
+  - CARB_ACRE : estimate of mean total carbon per acre(metric tonnes/acre)
+- option
+  - byPool = T : aboveground live, belowground live, dead wood, litter, soil organic(p961 REF_POP_ATTRIBUTE)
+  - byComponent = T : return estimates grouped by IPCC forest carbon components
+
+```{r warning = FALSE, message = FALSE}
+ctSF = carbon(riMR, polys = countiesRI, returnSpatial=T, byPool=F, totals=T) # totals = T return total population estimates
+plot(ctSF)
+plotFIA(ctSF, CARB_TOTAL)
+```
+
+- 노랑 > 주황 > 핑크 > 보라 > 파랑
+
+## diversity
+- estimate diversity
+- Shannon's index : 한 집단 내의 데이터의 class가 얼마나 다양한지 나타내는 지표
+- Shannon's equitability : 각 diversity 값을 최대 diversity 값으로 나눠 정규화한 것
+```{r warning = FALSE, message = FALSE}
+diversity(riMR, landType='forest', treeType='live')
+
+riMR$COND$STAND_AGE = makeClasses(riMR$COND$STDAGE, interval=10)
+head(diversity(riMR, grpBy = STAND_AGE), n=8)
+
+head(diversity(riMR, landType = 'timber', treeType = 'gs', bySizeClass=T), n=8) # 2-inch intervals
+```
+
+- output
+  - H_a : Shannon's Diversity Index, alpha (stand) level
+  - H_b : Shannon's Diversity Index, beta (landscape) level
+  - H_g : Shannon's Diversity Index, gamma (regional) level
+  - Eh_a : Shannon's Equitability Index, alpha (stand) level
+  - Eh_b : Shannon's Equitability Index, beta (landscape) level
+  - Eh_g : Shannon's Equitability Index, gamma (regional) level
+  - S_a : Species Richness, alpha (stand) level
+  - S_b : Species Richness, beta (landscape) level
+  - S_g : Species Richness, gamma (regional) level
+
+```{r warning = FALSE, message = FALSE}
+ctSF = diversity(riMR, polys = countiesRI, returnSpatial=T)
+plot(ctSF)
+plotFIA(ctSF, H_a)
+```
+
+- 노랑 > 주황 > 핑크 > 보라 > 파랑
+
+## dwm
+- Estimate volume, biomass, carbon stocks of down woody material(fuels)
+```{r warning = FALSE, message = FALSE}
+dwm(riMR)
+dwm(riMR, grpBy=OWNGRPCD)
+```
+
+- output
+  - VOL_ACRE : estimate of mean volume per acre of dwm(cu.ft/acre)
+  - BIO_ACRE : estimate of mean biomass per acre of dwm(short tons/acre)
+  - CARB_ACRE : estimate of mean carbon mass per acre of dwm(short tons/acre)
+- option
+  - tidy = T : return estimates grouped by fuel type
+
+```{r warning = FALSE, message = FALSE}
+dwmSF = dwm(riMR, polys = countiesRI, returnSpatial = T, tidy = F)
+plot(dwmSF)
+plotFIA(dwmSF, BIO_ACRE)
+```
+
+- 노랑 > 주황 > 핑크 > 보라 > 파랑
+
+## findEVALID
+- Find EVALIDs
+- Lookup Evaluation IDs associated with reporting years & evaluation types
+```{r warning = FALSE, message = FALSE}
+findEVALID(riMR)
+```
+- output
+  - 2-digit State code + 2-digit year code + 2-digit evaluation type code
+
+## fsi
+- Estimate the Forest Stability Index
+- Estimate annual change in relative live tree density
+- FSI : compare actual changes in tree density to those expected
+```{r warning = FALSE, message = FALSE}
+fsi(riMR)
+```
+
+- output
+  - FSI : estimate of forest stability index(annual change in relative live tree density)
+  - PERC_FSI : estimate of % forest stability index(% annual change in relative live tree density)
+  - FSI_STATUS : decline / stable / expand
+  - FSI_INT : width of 95% CI of mean FSI
+  - PREV_RD : estimate of relative live tree density at initial measurement of all plots
+  - CURR_RD : estimate of relative live tree density at final measurement of all plots
+  - TPA_RATE : standardized estimate of annual change in TPA
+  - BA_RATE : standardized estimate of annual change in BA
+
+```{r warning = FALSE, message = FALSE}
+results = fsi(riMR, scaleBy = FORTYPCD, returnBetas = T)
+results$results # FSI estimates
+results$betas # model coefficients
+```
+
+- option
+  - scaleBy : variables from PLOT or COND tables (to use as 'random effects')
+  - returnBetas = T : return estimated coefficients of maximum size-density models along with results
+
+- output
+  - grps : unique identifier associated with the group
+  - alpha : posterior median of scaling factor that describes the maximum tree density at average tree basal area of one sq. ft.
+  - rate : posterior median of negative exponent controlling the decay in maximum tree density with increasing average tree size
+  - n : number of observations with the group with an approximately normal diameter distribution and no evidence of recent disturbance
+
+## makeClasses
+- Convert numeric variables to class intervals(factor)
+
+
+## growMort
+- Estimates of recruitment, natural mortality, harvest rates
+```{r warning = FALSE, message = FALSE}
+growMort(riMR)
+
+riMR$COND$STAND_AGE = makeClasses(riMR$COND$STDAGE, interval=10)
+growMort(riMR, grpBy = STAND_AGE)
+```
+
+- output
+  - RECR_TPA : estimate of mean annual recruitment as trees per acre
+  - MORT_TPA : estimate of mean annual mortality as trees per acre
+  - REMV_TPA : estimate of mean annual removals (harvest) as trees per acre
+  - RECR_PERC : estimate of mean percent of individuals subject to recruitment annually
+  - MORT_PERC : estimate of mean percent of individuals subject to mortality annually
+  - REMV_PERC : estimate of mean percent of individuals subject to removal (harvest) annually
+
+```{r warning = FALSE, message = FALSE}
+ctSF = growMort(riMR, polys=countiesRI, returnSpatial=T)
+plot(ctSF)
+plotFIA(ctSF, MORT_TPA)
+```
+
+- 노랑 > 주황 > 핑크 > 보라 > 파랑
+
+## invasive
+- Estimates of areal coverage of invasive species
+```{r warning = FALSE, message = FALSE}
+invasive(riMR)
+invasive(riMR, grpBy=STAND_AGE)
+```
+
+- output
+  - SYMBOL : unique species ID from NRCS Plant Reference Guide
+  - COVER_PCT : estimate of percent areal coverage of the species
+  - COVER_AREA : estimate of areal coverage of the species(acres)
+  - nPlots_INV : number of non-zero plots used to compute invasive coverage estimates
+
+
+## plotFIA
+- non-spatial summaries -> time-series plots
+- spatial summaries(class sf) -> choropleth maps(단계구분도)
+```{r warning = FALSE, message = FALSE}
+tpaRI = tpa(fiaRI, polys=countiesRI, returnSpatial = T)
+
+plotFIA(tpaRI, y=TPA, legend.title='Abundance(TPA)')
+plotFIA(tpaRI, y=TPA, legend.title='Abundance(TPA)', transform='sqrt')
+```
+
+- option
+  - transform : transformations to apply to plotted variable y
+
+
+```{r warning = FALSE, message = FALSE}
+tpaMR = tpa(riMR, polys=countiesRI, returnSpatial = T)
+
+plotFIA(tpaMR, y=TPA, legend.title='Abundance(TPA)')
+```
+
+```{r warning = FALSE, message = FALSE}
+# no spatial grouping -> time series plot
+tpaRI = tpa(fiaRI)
+
+plotFIA(tpaRI, y=TPA)
+```
+
+```{r warning = FALSE, message = FALSE}
+tpaRI_sc = tpa(riMR, bySpecies=T, bySizeClass=T)
+plotFIA(tpaRI_sc, y=BAA, grp=COMMON_NAME, x=sizeClass, n.max=4)
+```
+
+
+## seedling
+- Estimate seedling(< 1 inch DBH) abundance per acre
+```{r warning = FALSE, message = FALSE}
+seedling(riMR, landType='timber')
+seedling(riMR, treeDomain = SPCD == 129, areaDomain = PHYSCLCD %in% 21:29)
+```
+
+- option
+  - TPA : estimate of mean trees per acre
+  - TPA_PERC : estimate of mean proportion of live trees falling within the domain of interest, with respect to trees per acre
+
+## standStruct
+- Estimate forest structural stage distribution
+```{r warning = FALSE, message = FALSE}
+standStruct(riMR)
+standStruct(riMR, areaDomain=PHYSCLCD %in% c(11:19))
+```
+
+- output
+  - STAGE : stand structural stage
+  - PERC : % land area in each structural stage
+
+- Structural Stage Classification
+  - Pole : > 67% BA in pole and mature classes, with more BA in pole than mature
+  - Mature : > 67% BA in pole and mature classes, with more BA in mature than pole OR
+             > 67% BA in mature and large classes, with more BA in mature.
+  - Late-Successional : > 67% BA in mature and large classes, with more in large
+  - Mosaic : Any plot not meeting above criteria
+
+```{r warning = FALSE, message = FALSE}
+sdSF = standStruct(riMR, polys=countiesRI, returnSpatial=T, tidy=F)
+plot(sdSF)
+plotFIA(sdSF, POLE_PERC)
+```
+
+- 노랑 > 주황 > 핑크 > 보라 > 파랑
+
+## vegStruct
+- Estimate vegetation cover by canopy layer
+```{r warning = FALSE, message = FALSE}
+head(vegStruct(riMR), n=10)
+```
+
+- output
+  - LAYER : canopy layer
+  - GROWTH_HABIT : species growth habit
+  - COVER_PCT : estimate of percent areal coverage of the growth habit within the canopy layer
+  - COVER_AREA : estimate of areal coverage of the growth habit within the canopy layer(acres)
+  - AREA : estimate of total land area (acres)
+  - nPlots_VEG : number of non-zero plots used to compute areal coverage estimates
+
+## vitalRates
+- Estimate tree growth rates
+```{r warning = FALSE, message = FALSE}
+vitalRates(riMR, landType = 'timber', treeType = 'gs')
+vitalRates(riMR, treeType = 'live', treeDomain = SPCD == 129 & DIA > 12, areaDomain = PHYSCLCD %in% 21:29)
+head(vitalRates(riMR, landType = 'forest', bySpecies = T), n=10)
+```
+- output
+  - DIA_GROW : diameter growth of a stem
+  - BA_GROW : basal area growth of a stem
+  - BAA_GROW : basal area growth per acre
+  - NETVOL_GROW : net volume growth of a stem
+  - NETVOL_GROW_AC : net volume growth per acre
+  - SAWVOL_GROW : net sawlog volume growth of a stem
+  - SAWVOL_GROW_AC : net sawlog volume growth per acre
+  - BIO_GROW : aboveground biomass growth of a stem
+  - BIO_GROW_AC : aboveground biomass growth per acre
+
+```{r warning = FALSE, message = FALSE}
+ctSF = vitalRates(riMR, polys = countiesRI, returnSpatial = T)
+plot(ctSF)
+plotFIA(ctSF, BIO_GROW)
+```
+
+- 노랑 > 주황 > 핑크 > 보라 > 파랑
+
+## volume
+- Estimate merchantable tree volume
+```{r warning = FALSE, message = FALSE}
+volume(riMR, landType = 'timber', treeType = 'gs')
+volume(riMR, landType = 'timber', treeType = 'gs', volType = 'gross')
+
+riMR$COND$STAND_AGE = makeClasses(riMR$COND$STDAGE, interval=10)
+volume(riMR, grpBy = STAND_AGE)
+
+head(volume(riMR, landType = 'forest', treeType = 'live', bySpecies = T), n=10)
+```
+- option
+  - volType : NET / SOUND / GROSS
+- output
+  - BOLE_CF_ACRE : estimate of mean merchantable bole volume per acre (cu.ft./acre)
+  - SAW_CF_ACRE : estimate of mean tree carbon per acre(thousand board)
+
+```{r warning = FALSE, message = FALSE}
+ctSF = volume(riMR, polys = countiesRI, returnSpatial = T)
+plot(ctSF)
+plotFIA(ctSF, SAW_MBF_ACRE)
+```
+
+- 노랑 > 주황 > 핑크 > 보라 > 파랑
+
+
+
+
+
